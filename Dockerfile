@@ -1,69 +1,60 @@
-# syntax = docker/dockerfile:1
 
 # This Dockerfile is designed for production, not development. Use with Kamal or build'n'run by hand:
 # docker build -t my-app .
 # docker run -d -p 80:80 -p 443:443 --name my-app -e RAILS_MASTER_KEY=<value from config/master.key> my-app
 
 # Make sure RUBY_VERSION matches the Ruby version in .ruby-version
-ARG RUBY_VERSION=3.2.2
-FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 
-# Rails app lives here
-WORKDIR /rails
+# ใช้ GraalVM base image
+FROM ghcr.io/graalvm/graalvm-community:22
 
-# Install base packages
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 libvips sqlite3 && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+# ติดตั้งเครื่องมือพื้นฐาน
+RUN microdnf install -y gcc-c++ make libpq-devel nodejs unzip zip curl git cmake xz tar
 
-# Set production environment
-ENV RAILS_ENV="production" \
-    BUNDLE_DEPLOYMENT="1" \
-    BUNDLE_PATH="/usr/local/bundle" \
-    BUNDLE_WITHOUT="development"
+# ติดตั้ง libyaml จาก source
+RUN curl -L https://github.com/yaml/libyaml/archive/refs/tags/0.2.5.tar.gz | tar xz \
+    && cd libyaml-0.2.5 \
+    && mkdir build \
+    && cd build \
+    && cmake .. \
+    && make \
+    && make install \
+    && ldconfig
 
-# Throw-away build stage to reduce size of final image
-FROM base AS build
+# ติดตั้ง rbenv และ ruby-build
+RUN curl -fsSL https://github.com/rbenv/rbenv-installer/raw/main/bin/rbenv-installer | bash
 
-# Install packages needed to build gems
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential git pkg-config && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+# ตั้งค่า PATH และติดตั้ง Ruby
+ENV PATH="/root/.rbenv/bin:${PATH}"
+RUN eval "$(rbenv init -)" \
+    && rbenv install 3.1.2 \
+    && rbenv global 3.1.2 \
+    && gem install bundler rails
 
-# Install application gems
-COPY Gemfile Gemfile.lock ./
-RUN bundle install && \
-    rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
-    bundle exec bootsnap precompile --gemfile
+# ติดตั้ง TruffleRuby และ Rails
+RUN eval "$(rbenv init -)" \
+    && rbenv install truffleruby-24.0.2 \
+    && rbenv global truffleruby-24.0.2 \
+    && gem install rails
 
-# Copy application code
+# ตรวจสอบการติดตั้ง Ruby
+RUN eval "$(rbenv init -)" \
+    && ruby -v \
+    && rails -v
+
+# สร้าง directory สำหรับแอปพลิเคชัน
+WORKDIR /app
+
+# คัดลอกไฟล์แอปพลิเคชัน
 COPY . .
 
-# Precompile bootsnap code for faster boot times
-RUN bundle exec bootsnap precompile app/ lib/
+# ติดตั้ง dependencies ของ Ruby
+RUN eval "$(rbenv init -)" \
+    && bundle install
 
-# Precompiling assets for production without requiring secret RAILS_MASTER_KEY
-RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+# คอมไพล์โปรเจกต์
+RUN eval "$(rbenv init -)" \
+    && bundle exec rake assets:precompile
 
-
-
-
-# Final stage for app image
-FROM base
-
-# Copy built artifacts: gems, application
-COPY --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
-COPY --from=build /rails /rails
-
-# Run and own only the runtime files as a non-root user for security
-RUN groupadd --system --gid 1000 rails && \
-    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash && \
-    chown -R rails:rails db log storage tmp
-USER 1000:1000
-
-# Entrypoint prepares the database.
-ENTRYPOINT ["/rails/bin/docker-entrypoint"]
-
-# Start the server by default, this can be overwritten at runtime
-EXPOSE 3000
-CMD ["./bin/rails", "server"]
+# ตั้งค่าคำสั่งเริ่มต้น
+CMD ["bash", "-c", "export PATH=\"$HOME/.rbenv/bin:$PATH\" && eval \"$(rbenv init -)\" && rails server -b 0.0.0.0"]
