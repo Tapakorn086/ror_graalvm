@@ -1,15 +1,14 @@
+# Base image GraalVM with native-image and Java 17
+FROM ghcr.io/graalvm/native-image:ol8-java17-22.3.3
 
-# This Dockerfile is designed for production, not development. Use with Kamal or build'n'run by hand:
-# docker build -t my-app .
-# docker run -d -p 80:80 -p 443:443 --name my-app -e RAILS_MASTER_KEY=<value from config/master.key> my-app
-
-# Make sure RUBY_VERSION matches the Ruby version in .ruby-version
-
-# ใช้ GraalVM base image
-FROM ghcr.io/graalvm/graalvm-community:22
+# Set environment variables
+ENV LANG=C.UTF-8 \
+    RUBY_VERSION=3.2.2 \
+    BUNDLER_VERSION=2.3.26
 
 # ติดตั้งเครื่องมือพื้นฐาน
-RUN microdnf install -y gcc-c++ make libpq-devel nodejs unzip zip curl git cmake xz tar
+RUN microdnf install -y gcc-c++ make libpq-devel nodejs unzip zip curl git cmake xz tar \
+    openssl-devel zlib-devel readline-devel glibc-langpack-en
 
 # ติดตั้ง libyaml จาก source
 RUN curl -L https://github.com/yaml/libyaml/archive/refs/tags/0.2.5.tar.gz | tar xz \
@@ -21,17 +20,19 @@ RUN curl -L https://github.com/yaml/libyaml/archive/refs/tags/0.2.5.tar.gz | tar
     && make install \
     && ldconfig
 
-# ติดตั้ง rbenv และ ruby-build
-RUN curl -fsSL https://github.com/rbenv/rbenv-installer/raw/main/bin/rbenv-installer | bash
+# Install rbenv and ruby-build to manage Ruby versions
+RUN git clone https://github.com/rbenv/rbenv.git ~/.rbenv \
+    && git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build \
+    && ~/.rbenv/bin/rbenv install $RUBY_VERSION \
+    && ~/.rbenv/bin/rbenv global $RUBY_VERSION \
+    && ~/.rbenv/bin/rbenv rehash
 
-# ตั้งค่า PATH และติดตั้ง Ruby
-ENV PATH="/root/.rbenv/bin:${PATH}"
-RUN eval "$(rbenv init -)" \
-    && rbenv install 3.1.2 \
-    && rbenv global 3.1.2 \
-    && gem install bundler rails
+# Add rbenv to PATH
+ENV PATH="/root/.rbenv/shims:/root/.rbenv/bin:$PATH"
 
-# ติดตั้ง TruffleRuby และ Rails
+# Install bundler for managing gems
+RUN gem install bundler -v $BUNDLER_VERSION
+
 RUN eval "$(rbenv init -)" \
     && rbenv install truffleruby-24.0.2 \
     && rbenv global truffleruby-24.0.2 \
@@ -42,19 +43,20 @@ RUN eval "$(rbenv init -)" \
     && ruby -v \
     && rails -v
 
-# สร้าง directory สำหรับแอปพลิเคชัน
+# Create app directory
 WORKDIR /app
 
-# คัดลอกไฟล์แอปพลิเคชัน
+# Install application dependencies (Rails)
+COPY Gemfile* ./
+RUN bundle install
+
+# Copy the rest of the application code
 COPY . .
 
-# ติดตั้ง dependencies ของ Ruby
-RUN eval "$(rbenv init -)" \
-    && bundle install
+# Expose the Rails server port
+EXPOSE 3000
 
-# คอมไพล์โปรเจกต์
-RUN eval "$(rbenv init -)" \
-    && bundle exec rake assets:precompile
+# Command to start the Rails server
+ENTRYPOINT ["bundle", "exec", "rails", "server"]
+CMD ["-b", "0.0.0.0"]
 
-# ตั้งค่าคำสั่งเริ่มต้น
-CMD ["bash", "-c", "export PATH=\"$HOME/.rbenv/bin:$PATH\" && eval \"$(rbenv init -)\" && rails server -b 0.0.0.0"]
