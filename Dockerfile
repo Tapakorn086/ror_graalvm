@@ -1,4 +1,7 @@
 # Base image GraalVM with native-image and Java 17
+# docker build -t test-graalVM
+# docker run -p 3000:3000 test-graalVM
+
 FROM ghcr.io/graalvm/native-image:ol8-java17-22.3.3
 
 # Set environment variables
