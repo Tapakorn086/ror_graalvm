@@ -1,0 +1,107 @@
+# docker build  -f Dockerfile.native-image -t test-native-image .
+# docker run test-native-image
+
+
+# Stage 1: Build Stage - ใช้สำหรับการติดตั้ง dependencies และ compile native-image
+FROM ghcr.io/graalvm/native-image:ol8-java17-22.3.3 AS build-stage
+
+# ติดตั้งเครื่องมือพื้นฐานและ dependencies สำหรับการสร้าง native-image
+RUN microdnf install -y gcc-c++ make libpq-devel nodejs unzip zip curl git cmake xz tar \
+    openssl-devel zlib-devel readline-devel glibc-langpack-en
+
+# Set environment variables
+ENV LANG=C.UTF-8 \
+    RUBY_VERSION=3.2.2 \
+    BUNDLER_VERSION=2.3.26
+
+# ติดตั้งเครื่องมือพื้นฐาน
+RUN microdnf install -y gcc-c++ make libpq-devel nodejs unzip zip curl git cmake xz tar \
+    openssl-devel zlib-devel readline-devel glibc-langpack-en
+
+# ติดตั้ง libyaml จาก source
+RUN curl -L https://github.com/yaml/libyaml/archive/refs/tags/0.2.5.tar.gz | tar xz \
+    && cd libyaml-0.2.5 \
+    && mkdir build \
+    && cd build \
+    && cmake .. \
+    && make \
+    && make install \
+    && ldconfig
+
+# Install rbenv and ruby-build to manage Ruby versions
+RUN git clone https://github.com/rbenv/rbenv.git ~/.rbenv \
+    && git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build \
+    && ~/.rbenv/bin/rbenv install $RUBY_VERSION \
+    && ~/.rbenv/bin/rbenv global $RUBY_VERSION \
+    && ~/.rbenv/bin/rbenv rehash
+
+# Add rbenv to PATH
+ENV PATH="/root/.rbenv/shims:/root/.rbenv/bin:$PATH"
+
+# Install bundler for managing gems
+RUN gem install bundler -v $BUNDLER_VERSION
+
+RUN eval "$(rbenv init -)" \
+    && rbenv install truffleruby-24.0.2 \
+    && rbenv global truffleruby-24.0.2 \
+    && gem install rails
+
+# ตรวจสอบการติดตั้ง Ruby
+RUN eval "$(rbenv init -)" \
+    && ruby -v \
+    && rails -v
+
+# Create app directory
+WORKDIR /app
+
+# Install application dependencies (Rails)
+COPY Gemfile* ./
+RUN bundle install
+
+# Copy configuration files
+COPY config/native-image/reflect-config.json /app/config/native-image/
+COPY config/native-image/resource-config.json /app/config/native-image/
+COPY config/native-image/jni-config.json /app/config/native-image/
+
+# Copy โค้ด Java สำหรับการสร้าง native-image
+COPY Java/RunRails.java /app/Java/
+COPY . .
+
+# # Compile Java โค้ดเพื่อสร้าง .class files
+# RUN javac ./Java/RunRails.java
+
+# # สร้าง native-image จาก Java .class files
+# RUN native-image --no-fallback \
+#     -H:Class=Java.RunRails \
+#     -H:Name=runrails \
+#     -H:ReflectionConfigurationFiles=config/native-image/reflect-config.json \
+#     -H:ResourceConfigurationFiles=config/native-image/resource-config.json \
+#     -H:JNIConfigurationFiles=config/native-image/jni-config.json \
+#     -cp ./Java RunRails
+
+RUN javac ./Java/RunRails.java && \
+    native-image --no-fallback \
+    -H:Name=runrails \
+    -H:ReflectionConfigurationFiles=config/native-image/reflect-config.json \
+    -H:ResourceConfigurationFiles=config/native-image/resource-config.json \
+    -H:JNIConfigurationFiles=config/native-image/jni-config.json \
+    -cp ./Java RunRails
+
+RUN ls -al
+
+# Stage 2: Runtime Stage - รันแอปพลิเคชันด้วย native-image
+FROM ghcr.io/graalvm/native-image:ol8-java17-22.3.3 AS runtime-stage
+
+# Copy native binary จาก build stage
+RUN ls -al
+WORKDIR /app
+COPY --from=build-stage /app/runrails /app/runrails
+RUN ls -al
+COPY . .
+
+
+# Expose the Rails server port
+EXPOSE 3000
+
+# รัน native-image ที่ถูกสร้าง
+ENTRYPOINT ["./runrails"]

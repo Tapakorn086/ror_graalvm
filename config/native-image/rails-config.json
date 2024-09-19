@@ -1,0 +1,10 @@
+{
+    "railsRoutes": [
+      {"path": "/", "controller": "application", "action": "index"}
+    ],
+    "activeRecordModels": [],
+    "railsControllers": [
+      "ApplicationController"
+    ]
+  }
+  

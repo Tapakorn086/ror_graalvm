@@ -1,0 +1,8 @@
+[
+  [
+    "java.lang.reflect.Proxy",
+    [
+      "org.jruby.Ruby"
+    ]
+  ]
+]

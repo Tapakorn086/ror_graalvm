@@ -1,0 +1,20 @@
+[
+    {
+      "name": "ActiveRecord::Base",
+      "allPublicMethods": true,
+      "allPublicConstructors": true,
+      "allPublicFields": true
+    },
+    {
+      "name": "ActionController::Base",
+      "allPublicMethods": true,
+      "allPublicConstructors": true,
+      "allPublicFields": true
+    },
+    {
+      "name": "ApplicationController",
+      "allPublicMethods": true,
+      "allPublicConstructors": true,
+      "allPublicFields": true
+    }
+  ]

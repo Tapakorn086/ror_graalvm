@@ -1,0 +1,9 @@
+[
+    {
+      "name": "org.jruby.Ruby",
+      "methods": [
+        { "name": "getNativeLoader", "parameterTypes": [] }
+      ]
+    }
+  ]
+  

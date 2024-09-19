@@ -1,0 +1,8 @@
+[
+    {
+      "name": "org.jruby.Ruby",
+      "allPublicConstructors": true,
+      "allPublicMethods": true,
+      "allPublicFields": true
+    }
+  ]

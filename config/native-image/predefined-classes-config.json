@@ -1,0 +1,5 @@
+[
+    "org.jruby.Ruby",
+    "org.jruby.RubyInstanceConfig",
+    "org.jruby.embed.ScriptingContainer"
+  ]

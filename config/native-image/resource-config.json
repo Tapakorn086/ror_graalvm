@@ -1,0 +1,13 @@
+{
+    "resources": [
+      {"pattern": "config/.*\\.yml"},
+      {"pattern": "config/routes\\.rb"},
+      {"pattern": "app/views/.*\\.erb"},
+      {"pattern": "public/.*"},
+      {"pattern": "db/schema\\.rb"}
+    ],
+    "bundles": [
+      {"name": "messages"}
+    ]
+  }
+  
